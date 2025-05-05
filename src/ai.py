@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 try:
     from openai import OpenAI
     from anthropic import Anthropic
-    from mistralai.client import MistralClient
+    from mistralai import Mistral
     IMPORTS_SUCCESSFUL = True
 except ImportError:
     IMPORTS_SUCCESSFUL = False
@@ -205,7 +205,7 @@ class MistralRater:
         if not self.api_key:
             raise ValueError("Mistral API key is required")
         
-        self.client = MistralClient(api_key=self.api_key)
+        self.client = Mistral(api_key=self.api_key)
         logger.info("Initialized Mistral rater")
     
     def rate_text(
@@ -246,7 +246,7 @@ class MistralRater:
             request_params["temperature"] = temperature
         
         try:
-            response = self.client.chat(**request_params)
+            response = self.client.chat.complete(**request_params)
             response_text = response.choices[0].message.content
             
             ## Parse JSON response
