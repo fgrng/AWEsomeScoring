@@ -4,7 +4,7 @@ A command line tool for automated writing evaluation (AWE) using different AI mo
 
 ## Overview
 
-AWEsomeScoring is a tool that enables benchmarking and evaluation of text using different AI models. It processes text corpora, applies specific prompts to evaluate the texts, and generates standardized outputs for analysis.
+AWEsomeScoring helps educators and researchers evaluate written texts using AI. It can process entire text corpora, apply customized evaluation prompts, and generate standardized outputs for analysis and comparison across different AI models.
 
 ## Features
 
@@ -20,9 +20,12 @@ AWEsomeScoring is a tool that enables benchmarking and evaluation of text using 
 ### Prerequisites
 
 - Python 3.7 or higher
-- API keys for OpenAI, Claude, and/or Mistral (depending on which services you want to use)
+- API keys for the services you want to use:
+  - [OpenAI API key](https://platform.openai.com/account/api-keys)
+  - [Anthropic API key](https://console.anthropic.com/account/keys)
+  - [Mistral API key](https://console.mistral.ai/api-keys/)
 
-### Installation
+### Installation (from source)
 
 ```bash
 # Clone the repository
@@ -69,7 +72,7 @@ awescore config init --output my_config.yaml
   --temperature 0.7
 ```
 
-## Environment Variables
+### API Keys
 
 Set your API keys as environment variables:
 
@@ -101,6 +104,81 @@ temperature: 0.7
 max_workers: 10
 retry_max_attempts: 12
 retry_initial_wait: 2
+```
+
+## Input Formats
+
+AWEsomeScoring supports two primary corpus formats:
+
+### CSV Format
+
+A simple CSV file with columns:
+- `student_id`: Unique identifier for each text
+- `text`: The actual text content to evaluate
+
+### Text Formats
+
+Two special formats are supported. They are specified for a research project the author is associated with. 
+- `basch_narrative`: Narrative writing samples with numeric student IDs
+- `basch_instructive`: Instructive writing samples with text identifiers
+
+## Prompts
+
+You'll need to provide two separate prompt files:
+
+1. **System Prompt**: Instructions for the AI model on how to evaluate texts
+2. **User Prompt**: Template for presenting the text to evaluate
+
+The user prompt should include a `{student_text}` placeholder that will be replaced with the actual text to evaluate.
+
+Example system prompt:
+```
+You are an expert teacher evaluating student writing. Rate each text on a scale of 1-6, where 1 is poor and 6 is excellent. Provide analysis of strengths, weaknesses, and a justification for your score. Format your response as a JSON object with these fields: punktzahl (score), staerken (strengths), schwaechen (weaknesses), and begruendung (justification).
+```
+
+Example user prompt:
+```
+Please evaluate the following student text and provide a score from 1-6, along with an analysis of its strengths and weaknesses:
+
+{student_text}
+```
+
+If you use any other curly bracket in your user prompt, you have to use double brackets `{{` and `}}`.
+
+## Results Format
+
+AWEsomeScoring generates a special CSV format (again: for a research project the author is associated with). It alse saves the raw responses from the AI services.
+
+1. **CSV Result Files**: Containing processed results with columns:
+   - `student_id`: Text identifier
+   - `punktzahl`: Numerical score
+   - `staerken`: Strengths analysis
+   - `schwaechen`: Weaknesses analysis
+   - `begruendung`: Justification for the score
+
+2. **Raw JSON Responses**: Complete API responses from each model
+
+## Advanced Usage
+
+### Controlling Concurrency
+
+```bash
+# Run with 5 worker threads instead of the default 10
+awescore benchmark run --max-workers 5 [other options]
+```
+
+### Multiple Runs for Statistical Analysis
+
+```bash
+# Run the benchmark 5 times for statistical significance
+awescore benchmark run --runs 5 [other options]
+```
+
+### Rate Limiting and Retries
+
+```bash
+# Configure retry behavior for API rate limits
+awescore benchmark run --retry-max-attempts 15 --retry-initial-wait 3 [other options]
 ```
 
 ## License
