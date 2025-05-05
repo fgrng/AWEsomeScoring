@@ -31,6 +31,7 @@ class ResultsManager:
             response: The API response object
             output_path: Path to save the response
         """
+        
         try:
             with open(output_path, "w", encoding="utf-8") as f:
                 if isinstance(response, (dict, list)):

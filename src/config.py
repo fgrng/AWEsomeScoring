@@ -227,24 +227,27 @@ class Config:
         self.comment_mistral = config.get('comment_mistral', 'Run')
         
         ## Input/output settings
-        self.input_corpus_path = config.get('input', '')
+        self.input_corpus_path = config.get('input', config.get('input_corpus_path', ''))
         self.output_dir = config.get('output', f"{datetime.now().strftime('%Y%m%d')}_Benchmark_Output")
         
         ## System and user prompts
-        self.system_prompt_path = config.get('system_prompt', '')
-        self.user_prompt_path = config.get('user_prompt', '')
+        self.system_prompt_path = config.get('system_prompt', config.get('system_prompt_path', ''))
+        self.user_prompt_path = config.get('user_prompt', config.get('user_prompt_path', ''))
         
         ## Corpus type (basch_narrative or basch_instructive)
         self.corpus_type = config.get('corpus_type', '')
         
         ## Services to use
-        services = config.get('services', ['openai', 'claude', 'mistral'])
-        self.use_openai = 'openai' in services
-        self.use_claude = 'claude' in services
-        self.use_mistral = 'mistral' in services
+        services = config.get('services', [])
+        self.use_openai = config.get('use_openai', 'openai' in services)
+        self.use_claude = config.get('use_claude', 'claude' in services)
+        self.use_mistral = config.get('use_mistral', 'mistral' in services)
         
         ## Number of runs
         self.num_runs = config.get('num_runs', 1)
+
+        ## Limit of students texts
+        self.limit = config.get('limit', 0)
         
         ## Concurrency settings
         self.max_workers = config.get('max_workers', 10)
@@ -309,6 +312,9 @@ class Config:
             
         if self.num_runs < 1:
             raise ValueError(f"Number of runs must be at least 1, got {self.num_runs}")
+
+        if self.limit < 0:
+            raise ValueError(f"Limit of students text must be at least 1 or 0 for no limit, got {self.num_runs}")
             
         if self.max_workers < 1:
             raise ValueError(f"Maximum workers must be at least 1, got {self.max_workers}")

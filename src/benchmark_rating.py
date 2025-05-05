@@ -13,14 +13,14 @@ import concurrent.futures
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 
-# Import local modules
+## Import local modules
 from config import Config
 from corpora import CorpusProcessor
 from results import ResultsManager, CSV_HEADERS
 from utils import RetryHandler, format_time_elapsed
 from ai import TextRater, OpenAIRater, ClaudeRater, MistralRater
 
-# Configure logging
+## Configure logging
 logger = logging.getLogger("awesome_scoring")
 
 class BenchmarkRunner:
@@ -40,26 +40,30 @@ class BenchmarkRunner:
         """
         self.config = config
         
-        # Load prompts
+        ## Load prompts
         with open(config.system_prompt_path, "r", encoding="utf-8") as f:
             self.system_prompt = f.read()
             
         with open(config.user_prompt_path, "r", encoding="utf-8") as f:
             self.user_prompt = f.read()
             
-        # Load corpus
+        ## Load corpus
         self.corpus = CorpusProcessor.load_corpus(
             config.input_corpus_path, config.corpus_type)
+        
+        ## Use limit paramet to reduce number of texts to score
+        if self.config.limit > 0:
+            self.corpus = {k: v for i, (k, v) in enumerate(self.corpus.items()) if i < config.limit}
             
-        # Save corpus as CSV for reference
+        ## Save corpus as CSV for reference
         corpus_csv_path = os.path.join(config.output_dir, "input_corpus.csv")
         CorpusProcessor.save_corpus_to_csv(self.corpus, corpus_csv_path)
         
-        # Save configuration for reference
+        ## Save configuration for reference
         config_path = os.path.join(config.output_dir, "benchmark_config.json")
         try:
             with open(config_path, "w", encoding="utf-8") as f:
-                # Convert config to dict and save as JSON
+                ## Convert config to dict and save as JSON
                 config_dict = {k: v for k, v in vars(config).items() 
                               if not k.startswith('_') and not callable(v)}
                 json.dump(config_dict, f, indent=2, default=str)
@@ -69,14 +73,14 @@ class BenchmarkRunner:
         except Exception as e:
             logger.error(f"Error saving configuration: {str(e)}")
         
-        # Initialize raters
+        ## Initialize raters
         self._init_raters()
     
     def _init_raters(self):
         """Initialize AI raters based on configuration."""
         self.raters = {}
         
-        # Initialize OpenAI rater if enabled
+        ## Initialize OpenAI rater if enabled
         if self.config.use_openai:
             try:
                 self.raters['openai'] = OpenAIRater(api_key=self.config.api_openai)
@@ -84,7 +88,7 @@ class BenchmarkRunner:
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI rater: {str(e)}")
         
-        # Initialize Claude rater if enabled
+        ## Initialize Claude rater if enabled
         if self.config.use_claude:
             try:
                 self.raters['claude'] = ClaudeRater(api_key=self.config.api_claude)
@@ -92,7 +96,7 @@ class BenchmarkRunner:
             except Exception as e:
                 logger.error(f"Failed to initialize Claude rater: {str(e)}")
         
-        # Initialize Mistral rater if enabled
+        ## Initialize Mistral rater if enabled
         if self.config.use_mistral:
             try:
                 self.raters['mistral'] = MistralRater(api_key=self.config.api_mistral)
@@ -114,18 +118,18 @@ class BenchmarkRunner:
         for run_num in range(1, self.config.num_runs + 1):
             logger.info(f"Starting RUN {run_num}/{self.config.num_runs}")
             
-            # Create run-specific output directory
+            ## Create run-specific output directory
             run_dir = os.path.join(
                 self.config.output_dir, 
                 f"run_{run_num}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             )
             os.makedirs(run_dir, exist_ok=True)
             
-            # Run benchmarks for each enabled service
+            ## Run benchmarks for each enabled service (in parallel)
             for service, rater in self.raters.items():
                 self.run_benchmark(service, rater, run_dir, run_num)
         
-        # Calculate total elapsed time
+        ## Calculate total elapsed time
         elapsed_time = time.time() - start_time
         logger.info(f"All benchmark runs completed in {format_time_elapsed(elapsed_time)}")
     
@@ -141,25 +145,25 @@ class BenchmarkRunner:
         """
         logger.info(f"Running {service.capitalize()} benchmark (Run {run_num})")
         
-        # Get configuration for this service
+        ## Get configuration for this service
         model = getattr(self.config, f"model_{service}")
         comment = getattr(self.config, f"comment_{service}")
         temperature = self.config.temperature if self.config.use_temperature else None
         
-        # Define output file path
+        ## Define output file path
         temp_str = f"temp{self.config.temperature}" if self.config.use_temperature else "noTemp"
         output_file = os.path.join(
             output_dir, 
             f"data_{service}_{model}_{temp_str}_{comment}_run{run_num}.csv"
         )
         
-        # Process function for individual texts
+        ## Process function for individual texts
         def process_text(student_id: str, text: str) -> Tuple[str, Dict[str, Any]]:
             """Process a single text with the rater."""
             try:
                 logger.info(f"Processing student {student_id} with {service}")
                 
-                # Rate the text
+                ## Rate the text
                 result = rater.rate_text(
                     text=text,
                     system_prompt=self.system_prompt,
@@ -168,7 +172,7 @@ class BenchmarkRunner:
                     temperature=temperature
                 )
                 
-                # Save raw response
+                ## Save raw response
                 raw_output_file = os.path.join(
                     output_dir,
                     f"raw_{service}_{model}_{temp_str}_{comment}_run{run_num}_{student_id}.json"
@@ -176,9 +180,10 @@ class BenchmarkRunner:
                 ResultsManager.save_raw_response(result, raw_output_file)
                 
                 logger.info(f"Completed processing for student {student_id} with {service}")
-                return student_id, result
                 
-            except Exception as e:
+                return student_id, json.loads(result)
+                
+            except Exception as e:               
                 logger.error(f"Error processing student {student_id} with {service}: {str(e)}")
                 return student_id, {
                     "punktzahl": -999,
@@ -187,7 +192,7 @@ class BenchmarkRunner:
                     "begruendung": "Error processing with AI service"
                 }
         
-        # Process all texts in parallel
+        ## Process all texts in parallel
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
             futures = {
@@ -195,28 +200,32 @@ class BenchmarkRunner:
                 for student_id, text in self.corpus.items()
             }
             
-            # Track progress
+            ## Track progress
             total = len(futures)
             completed = 0
             start_time = time.time()
             
-            # Collect results as they become available
+            ## Collect results as they become available
             for future in concurrent.futures.as_completed(futures):
                 student_id, result = future.result()
                 
-                # Add student_id to result if not already present
+                ## Add student_id to result if not already present
                 if "student_id" not in result:
                     result["student_id"] = student_id
+
+                ## Ensure each value is a string
+                for key in result:
+                    result[key] = str(json.dumps(result[key]))
                     
                 results.append(result)
                 
-                # Update progress
+                ## Update progress
                 completed += 1
                 elapsed = time.time() - start_time
                 avg_time = elapsed / completed if completed > 0 else 0
                 remaining = avg_time * (total - completed)
                 
-                # Calculate ETA
+                ## Calculate ETA
                 logger.info(
                     f"{service.capitalize()} progress: {completed}/{total} "
                     f"({completed/total*100:.1f}%) - "
@@ -224,7 +233,7 @@ class BenchmarkRunner:
                     f"ETA: {format_time_elapsed(remaining)}"
                 )
         
-        # Save results to CSV
+        ## Save results to CSV
         ResultsManager.save_results_to_csv(results, output_file)
         
         logger.info(f"{service.capitalize()} benchmark run {run_num} completed")

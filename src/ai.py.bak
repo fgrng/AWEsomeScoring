@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 try:
     from openai import OpenAI
     from anthropic import Anthropic
-    from mistralai import Mistral
+    from mistralai.client import MistralClient
     IMPORTS_SUCCESSFUL = True
 except ImportError:
     IMPORTS_SUCCESSFUL = False
@@ -61,6 +61,7 @@ class OpenAIRater:
             raise ValueError("OpenAI API key is required")
         
         self.client = OpenAI(api_key=self.api_key)
+        logger.info("Initialized OpenAI rater")
     
     def rate_text(
         self, 
@@ -95,13 +96,16 @@ class OpenAIRater:
             ]
         }
         
+        ## Add temperature if provided
+        if temperature is not None:
+            request_params["temperature"] = temperature
+        
         try:
             response = self.client.chat.completions.create(**request_params)
             response_text = response.choices[0].message.content
             
             ## Parse JSON response
-            # return json.loads(response_text)
-            return response_text
+            return json.loads(response_text)
         
         except Exception as e:
             logger.error(f"Error rating text with OpenAI: {str(e)}")
@@ -128,6 +132,7 @@ class ClaudeRater:
             raise ValueError("Anthropic API key is required")
         
         self.client = Anthropic(api_key=self.api_key)
+        logger.info("Initialized Claude rater")
     
     def rate_text(
         self, 
@@ -158,8 +163,7 @@ class ClaudeRater:
             "max_tokens": 1024,
             "system": system_prompt,
             "messages": [
-                {"role": "user", "content": specific_user_prompt},
-                {"role": "assistant", "content": "{"}
+                {"role": "user", "content": specific_user_prompt}
             ]
         }
         
@@ -173,11 +177,9 @@ class ClaudeRater:
             
             ## Parse JSON response
             if response_text.startswith("{"):
-                # return json.loads(response_text)
-                return response_text
+                return json.loads(response_text)
             else:
-                # return json.loads("{" + response_text)  ## Claude might omit the opening brace
-                return "{" + response_text
+                return json.loads("{" + response_text)  ## Claude might omit the opening brace
         
         except Exception as e:
             logger.error(f"Error rating text with Claude: {str(e)}")
@@ -203,7 +205,8 @@ class MistralRater:
         if not self.api_key:
             raise ValueError("Mistral API key is required")
         
-        self.client = Mistral(api_key=self.api_key)
+        self.client = MistralClient(api_key=self.api_key)
+        logger.info("Initialized Mistral rater")
     
     def rate_text(
         self, 
@@ -243,12 +246,11 @@ class MistralRater:
             request_params["temperature"] = temperature
         
         try:
-            response = self.client.chat.complete(**request_params)
+            response = self.client.chat(**request_params)
             response_text = response.choices[0].message.content
             
             ## Parse JSON response
-            # return json.loads(response_text)
-            return response_text
+            return json.loads(response_text)
         
         except Exception as e:
             logger.error(f"Error rating text with Mistral: {str(e)}")

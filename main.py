@@ -56,15 +56,14 @@ def add_corpus_subparsers(subparsers):
     
     ## Convert corpus
     convert_parser = corpus_subparsers.add_parser('convert', help='Convert corpus between formats')
-    convert_parser.add_argument('--input', '-i', required=True, help='Input corpus file path')
+    convert_parser.add_argument('--input', '-i', help='Input corpus file path')
     convert_parser.add_argument('--output', '-o', help='Output file path for converted corpus')
-    convert_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], 
-                               required=True, help='Type of corpus')
+    convert_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], help='Type of corpus')
     convert_parser.set_defaults(func=convert_corpus)
     
     ## List corpus
     list_parser = corpus_subparsers.add_parser('list', help='List all texts in corpus')
-    list_parser.add_argument('--input', '-i', required=True, help='Input corpus file path')
+    list_parser.add_argument('--input', '-i', help='Input corpus file path')
     list_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], 
                             help='Type of corpus (not needed for CSV files)')
     list_parser.add_argument('--limit', '-l', type=int, default=5, help='Limit the number of texts to display')
@@ -78,15 +77,14 @@ def add_benchmark_subparsers(subparsers):
     
     ## Run benchmark
     run_parser = benchmark_subparsers.add_parser('run', help='Run benchmarks on corpus')
-    run_parser.add_argument('--input', '-i', required=True, help='Input corpus file path')
+    run_parser.add_argument('--input', '-i', help='Input corpus file path')
     run_parser.add_argument('--output', '-o', help='Output directory for results')
-    run_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], 
-                           required=True, help='Type of corpus')
-    run_parser.add_argument('--system-prompt', '-s', required=True, help='System prompt file path')
-    run_parser.add_argument('--user-prompt', '-u', required=True, help='User prompt file path')
-    run_parser.add_argument('--services', nargs="+", choices=["openai", "claude", "mistral"], 
-                           default=["openai", "claude", "mistral"], help='AI services to use')
+    run_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], help='Type of corpus')
+    run_parser.add_argument('--system-prompt', '-s', help='System prompt file path')
+    run_parser.add_argument('--user-prompt', '-u', help='User prompt file path')
+    run_parser.add_argument('--services', nargs="+", choices=["openai", "claude", "mistral"], default=[], help='AI services to use')
     run_parser.add_argument('--runs', '-r', type=int, default=1, help='Number of benchmark runs')
+    run_parser.add_argument('--limit', '-l', type=int, help='Limit the number of texts to score')
     run_parser.add_argument('--config', '-c', help='Path to configuration file')
     run_parser.add_argument('--temperature', type=float, default=0.7, help='Temperature for generation')
     run_parser.add_argument('--no-temperature', action='store_true', 
@@ -150,7 +148,7 @@ def show_config(args, rater):
     
     config = ConfigManager.load_config(dummy_args)
     
-    ## Mask API keys for security
+    ## Mask API keys for "security"
     for key in config:
         if 'api_' in key and config[key]:
             config[key] = config[key][:4] + '...' + config[key][-4:]
