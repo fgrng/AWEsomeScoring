@@ -1,3 +1,19 @@
+"""
+Result management for AWEsomeScoring.
+
+This module manages the storage and processing of benchmark results.
+"""
+
+import csv
+import json
+import logging
+from typing import Dict, List, Any, Optional
+
+logger = logging.getLogger("awesome_scoring")
+
+## Define expected CSV headers for output
+CSV_HEADERS = ["student_id", "punktzahl", "staerken", "schwaechen", "begruendung"]
+
 class ResultsManager:
     """
     Manages benchmark results storage and processing.
@@ -45,12 +61,12 @@ class ResultsManager:
             with open(output_path, "w", encoding="utf-8") as f:
                 csv_writer = csv.writer(f)
                 
-                # Write header row
+                ## Write header row
                 csv_writer.writerow(headers)
                 
-                # Write data rows
+                ## Write data rows
                 for result in results:
-                    # Ensure all headers are present in the result
+                    ## Ensure all headers are present in the result
                     row = [result.get(header, "") for header in headers]
                     csv_writer.writerow(row)
                     
@@ -62,7 +78,7 @@ class ResultsManager:
     @staticmethod
     def parse_json_response(
         response_text: str, 
-        default_values: Dict[str, Any] = None
+        default_values: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Parse a JSON response with robust error handling.
@@ -83,10 +99,10 @@ class ResultsManager:
             }
         
         try:
-            # Try to parse the JSON response
+            ## Try to parse the JSON response
             response_json = json.loads(response_text)
             
-            # Validate expected fields
+            ## Validate expected fields
             for key in default_values:
                 if key not in response_json:
                     logger.warning(f"Missing field in JSON response: {key}")
@@ -95,17 +111,17 @@ class ResultsManager:
             return response_json
             
         except json.JSONDecodeError as e:
-            # Try to recover partial JSON
+            ## Try to recover partial JSON
             logger.error(f"JSON decode error: {str(e)}")
             
-            # Check if it's a Claude response with "{" prefix
+            ## Check if it's a Claude response with "{" prefix
             if response_text.startswith("{") and not response_text.endswith("}"):
                 try:
-                    # Try to add the closing brace
+                    ## Try to add the closing brace
                     response_text += "}"
                     response_json = json.loads(response_text)
                     
-                    # Add missing fields
+                    ## Add missing fields
                     for key in default_values:
                         if key not in response_json:
                             response_json[key] = default_values[key]
@@ -116,6 +132,67 @@ class ResultsManager:
                 except json.JSONDecodeError:
                     pass
             
-            # Return default values if recovery failed
+            ## Return default values if recovery failed
             logger.error(f"Failed to parse JSON response: {response_text[:100]}...")
             return default_values.copy()
+    
+    @staticmethod
+    def parse_results_file(file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse a results file (CSV or JSON) into a list of dictionaries.
+        
+        Args:
+            file_path: Path to the results file
+            
+        Returns:
+            List of result dictionaries
+        """
+        if file_path.endswith('.csv'):
+            return ResultsManager._parse_csv_results(file_path)
+        elif file_path.endswith('.json') or file_path.endswith('.jsonl'):
+            return ResultsManager._parse_json_results(file_path)
+        else:
+            raise ValueError(f"Unsupported file format: {file_path}")
+    
+    @staticmethod
+    def _parse_csv_results(file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse a CSV results file.
+        
+        Args:
+            file_path: Path to the CSV file
+            
+        Returns:
+            List of result dictionaries
+        """
+        results = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                results.append(row)
+        return results
+    
+    @staticmethod
+    def _parse_json_results(file_path: str) -> List[Dict[str, Any]]:
+        """
+        Parse a JSON results file.
+        
+        Args:
+            file_path: Path to the JSON file
+            
+        Returns:
+            List of result dictionaries
+        """
+        results = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            if file_path.endswith('.jsonl'):
+                ## Parse JSONL (line-delimited JSON)
+                for line in f:
+                    if line.strip():
+                        results.append(json.loads(line))
+            else:
+                ## Parse standard JSON
+                results = json.load(f)
+                if not isinstance(results, list):
+                    results = [results]
+        return results

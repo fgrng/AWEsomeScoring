@@ -1,46 +1,27 @@
-import asyncio
-import concurrent.futures
-import csv
-import json
-import logging
-import os
-import re
-import sys
-import time
-from datetime import datetime
-from io import BytesIO, StringIO
-from pathlib import Path
-from typing import Dict, List, Optional, Union, Any, Callable, Tuple
-from configparser import ConfigParser
-import random
-import yaml
+"""
+Benchmark rating module for AWEsomeScoring.
 
-# Import AI API clients
-try:
-    from mistralai import File, Mistral
-    from openai import OpenAI, RateLimitError, BadRequestError
-    import anthropic
-    from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
-    from anthropic.types.messages.batch_create_params import Request
-    IMPORTS_SUCCESSFUL = True
-except ImportError:
-    IMPORTS_SUCCESSFUL = False
-    print("Warning: Some AI API libraries are missing. Install with:")
-    print("pip install openai anthropic mistralai requests pyyaml")
+This module contains the BenchmarkRunner class which orchestrates
+the process of evaluating text corpora using different AI models.
+"""
+
+import os
+import json
+import time
+import logging
+import concurrent.futures
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+
+# Import local modules
+from config import Config
+from corpora import CorpusProcessor
+from results import ResultsManager, CSV_HEADERS
+from utils import RetryHandler, format_time_elapsed
+from ai import TextRater, OpenAIRater, ClaudeRater, MistralRater
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("benchmark.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("benchmark")
-
-# Define expected CSV headers for output
-CSV_HEADERS = ["student_id", "punktzahl", "staerken", "schwaechen", "begruendung"]
+logger = logging.getLogger("awesome_scoring")
 
 class BenchmarkRunner:
     """
@@ -75,21 +56,60 @@ class BenchmarkRunner:
         CorpusProcessor.save_corpus_to_csv(self.corpus, corpus_csv_path)
         
         # Save configuration for reference
-        config_path = os.path.join(config.output_dir, "benchmark_config.yaml")
+        config_path = os.path.join(config.output_dir, "benchmark_config.json")
         try:
             with open(config_path, "w", encoding="utf-8") as f:
-                yaml.dump(vars(config), f, default_flow_style=False)
+                # Convert config to dict and save as JSON
+                config_dict = {k: v for k, v in vars(config).items() 
+                              if not k.startswith('_') and not callable(v)}
+                json.dump(config_dict, f, indent=2, default=str)
                 
             logger.info(f"Saved configuration to {config_path}")
             
         except Exception as e:
             logger.error(f"Error saving configuration: {str(e)}")
+        
+        # Initialize raters
+        self._init_raters()
+    
+    def _init_raters(self):
+        """Initialize AI raters based on configuration."""
+        self.raters = {}
+        
+        # Initialize OpenAI rater if enabled
+        if self.config.use_openai:
+            try:
+                self.raters['openai'] = OpenAIRater(api_key=self.config.api_openai)
+                logger.info("Initialized OpenAI rater")
+            except Exception as e:
+                logger.error(f"Failed to initialize OpenAI rater: {str(e)}")
+        
+        # Initialize Claude rater if enabled
+        if self.config.use_claude:
+            try:
+                self.raters['claude'] = ClaudeRater(api_key=self.config.api_claude)
+                logger.info("Initialized Claude rater")
+            except Exception as e:
+                logger.error(f"Failed to initialize Claude rater: {str(e)}")
+        
+        # Initialize Mistral rater if enabled
+        if self.config.use_mistral:
+            try:
+                self.raters['mistral'] = MistralRater(api_key=self.config.api_mistral)
+                logger.info("Initialized Mistral rater")
+            except Exception as e:
+                logger.error(f"Failed to initialize Mistral rater: {str(e)}")
+        
+        if not self.raters:
+            raise ValueError("No AI raters could be initialized. Check API keys and configurations.")
     
     def run(self) -> None:
         """
         Run all benchmark tests based on configuration.
         """
         logger.info("Starting benchmark runs")
+        
+        start_time = time.time()
         
         for run_num in range(1, self.config.num_runs + 1):
             logger.info(f"Starting RUN {run_num}/{self.config.num_runs}")
@@ -102,131 +122,109 @@ class BenchmarkRunner:
             os.makedirs(run_dir, exist_ok=True)
             
             # Run benchmarks for each enabled service
-            if self.config.use_openai:
-                self.run_openai_benchmark(run_dir, run_num)
-                
-            if self.config.use_claude:
-                self.run_claude_benchmark(run_dir, run_num)
-                
-            if self.config.use_mistral:
-                self.run_mistral_benchmark(run_dir, run_num)
-                
-        logger.info("All benchmark runs completed")
+            for service, rater in self.raters.items():
+                self.run_benchmark(service, rater, run_dir, run_num)
+        
+        # Calculate total elapsed time
+        elapsed_time = time.time() - start_time
+        logger.info(f"All benchmark runs completed in {format_time_elapsed(elapsed_time)}")
     
-    def run_openai_benchmark(self, output_dir: str, run_num: int) -> None:
+    def run_benchmark(self, service: str, rater: Any, output_dir: str, run_num: int) -> None:
         """
-        Run benchmark using OpenAI API.
+        Run benchmark using the specified AI service.
         
         Args:
+            service: Service name ('openai', 'claude', or 'mistral')
+            rater: Rater instance
             output_dir: Directory to save results
             run_num: Current run number
         """
-        logger.info(f"Running OpenAI benchmark (Run {run_num})")
+        logger.info(f"Running {service.capitalize()} benchmark (Run {run_num})")
         
-        # Skip if API key is not available
-        if not self.config.api_openai:
-            logger.warning("Skipping OpenAI benchmark - API key not provided")
-            return
-        
-        model = self.config.model_openai
-        temperature = self.config.temperature
-        comment = f"{self.config.comment_openai}_run{run_num}"
-        
-        # Initialize OpenAI client
-        client = OpenAI(
-            api_key=self.config.api_openai,
-            max_retries=10
-        )
+        # Get configuration for this service
+        model = getattr(self.config, f"model_{service}")
+        comment = getattr(self.config, f"comment_{service}")
+        temperature = self.config.temperature if self.config.use_temperature else None
         
         # Define output file path
+        temp_str = f"temp{self.config.temperature}" if self.config.use_temperature else "noTemp"
         output_file = os.path.join(
             output_dir, 
-            f"data_openai_{model}_temp{temperature}_{comment}.csv"
+            f"data_{service}_{model}_{temp_str}_{comment}_run{run_num}.csv"
         )
         
-        # Helper function to process a single student request
-        def process_student_request(student_id: str, student_text: str) -> Tuple[str, Dict[str, Any]]:
-            """
-            Create request & get response for a single student using OpenAI API.
-            
-            Args:
-                student_id: Student ID
-                student_text: Student's text to evaluate
+        # Process function for individual texts
+        def process_text(student_id: str, text: str) -> Tuple[str, Dict[str, Any]]:
+            """Process a single text with the rater."""
+            try:
+                logger.info(f"Processing student {student_id} with {service}")
                 
-            Returns:
-                Tuple of (student_id, response_json)
-            """
-            specific_user_prompt = self.user_prompt.format(student_text=student_text)
-            
-            logger.info(f"Processing student {student_id} with OpenAI")
-            
-            # Build request params with conditional temperature
-            request_params = {
-                "model": model,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": specific_user_prompt}
-                ]
-            }
-            
-            # Only include temperature if use_temperature is True
-            if self.config.use_temperature:
-                request_params["temperature"] = temperature
-            
-            # Send the request to OpenAI with robust retry logic
-            response = RetryHandler.retry_with_backoff(
-                lambda: client.chat.completions.create(**request_params),
-                max_retries=self.config.retry_max_attempts,
-                initial_wait=self.config.retry_initial_wait,
-                description=f"OpenAI API call for student {student_id}"
-            )
-            
-            # Write raw response to file
-            raw_output_file = os.path.join(
-                output_dir,
-                f"data_openai_{model}_temp{temperature}_{comment}_{student_id}.json"
-            )
-            ResultsManager.save_raw_response(response, raw_output_file)
-            
-            # Extract the response content
-            response_text = response.choices[0].message.content
-            
-            # Parse JSON response with robust error handling
-            default_values = {
-                "punktzahl": -999,
-                "staerken": "Error parsing response",
-                "schwaechen": "Error parsing response",
-                "begruendung": "Error parsing response"
-            }
-            response_json = ResultsManager.parse_json_response(response_text, default_values)
-            
-            logger.info(f"Completed processing for student {student_id} with OpenAI")
-            return student_id, response_json
+                # Rate the text
+                result = rater.rate_text(
+                    text=text,
+                    system_prompt=self.system_prompt,
+                    user_prompt=self.user_prompt,
+                    model=model,
+                    temperature=temperature
+                )
+                
+                # Save raw response
+                raw_output_file = os.path.join(
+                    output_dir,
+                    f"raw_{service}_{model}_{temp_str}_{comment}_run{run_num}_{student_id}.json"
+                )
+                ResultsManager.save_raw_response(result, raw_output_file)
+                
+                logger.info(f"Completed processing for student {student_id} with {service}")
+                return student_id, result
+                
+            except Exception as e:
+                logger.error(f"Error processing student {student_id} with {service}: {str(e)}")
+                return student_id, {
+                    "punktzahl": -999,
+                    "staerken": f"Error: {str(e)}",
+                    "schwaechen": "Error processing with AI service",
+                    "begruendung": "Error processing with AI service"
+                }
         
-        # Process all students in parallel using ThreadPoolExecutor
+        # Process all texts in parallel
         results = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-            future_to_student = {
-                executor.submit(process_student_request, student_id, student_text): student_id
-                for student_id, student_text in self.corpus.items()
+            futures = {
+                executor.submit(process_text, student_id, text): student_id
+                for student_id, text in self.corpus.items()
             }
             
             # Track progress
-            total_students = len(future_to_student)
+            total = len(futures)
             completed = 0
+            start_time = time.time()
             
             # Collect results as they become available
-            for future in concurrent.futures.as_completed(future_to_student):
-                student_id, response = future.result()
-                response["student_id"] = student_id
-                results.append(response)
+            for future in concurrent.futures.as_completed(futures):
+                student_id, result = future.result()
+                
+                # Add student_id to result if not already present
+                if "student_id" not in result:
+                    result["student_id"] = student_id
+                    
+                results.append(result)
                 
                 # Update progress
                 completed += 1
-                logger.info(f"OpenAI progress: {completed}/{total_students} ({completed/total_students*100:.1f}%)")
+                elapsed = time.time() - start_time
+                avg_time = elapsed / completed if completed > 0 else 0
+                remaining = avg_time * (total - completed)
+                
+                # Calculate ETA
+                logger.info(
+                    f"{service.capitalize()} progress: {completed}/{total} "
+                    f"({completed/total*100:.1f}%) - "
+                    f"Avg: {avg_time:.1f}s/text - "
+                    f"ETA: {format_time_elapsed(remaining)}"
+                )
         
         # Save results to CSV
         ResultsManager.save_results_to_csv(results, output_file)
         
-        logger.info(f"OpenAI benchmark run {run_num} completed")
+        logger.info(f"{service.capitalize()} benchmark run {run_num} completed")

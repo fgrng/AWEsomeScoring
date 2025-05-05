@@ -1,3 +1,11 @@
+import csv
+import logging
+import os
+import re
+from typing import Dict, List, Optional
+
+logger = logging.getLogger("awesome_scoring")
+
 class CorpusProcessor:
     """
     Process text corpus files and convert between formats.
@@ -16,7 +24,7 @@ class CorpusProcessor:
         
         Args:
             file_path: Path to the corpus file
-            corpus_type: Type of corpus ('narrative' or 'instructive'), 
+            corpus_type: Type of corpus ('basch_narrative' or 'basch_instructive'), 
                          required for text files
                          
         Returns:
@@ -36,7 +44,7 @@ class CorpusProcessor:
         
         Args:
             file_path: Path to the text file
-            corpus_type: Type of corpus ('narrative' or 'instructive')
+            corpus_type: Type of corpus ('basch_narrative' or 'basch_instructive')
             
         Returns:
             Dictionary mapping student IDs to text content
@@ -46,14 +54,14 @@ class CorpusProcessor:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
         
-        # Perform common text cleanup
+        ## Perform common text cleanup
         content = CorpusProcessor._clean_text(content)
         
-        # Process based on corpus type
-        if corpus_type == "narrative":
-            return CorpusProcessor._parse_narrative_corpus(content)    
-        elif corpus_type == "instructive":
-            return CorpusProcessor._parse_instructive_corpus(content)
+        ## Process based on corpus type
+        if corpus_type == "basch_narrative":
+            return CorpusProcessor._parse_basch_narrative_corpus(content)    
+        elif corpus_type == "basch_instructive":
+            return CorpusProcessor._parse_basch_instructive_corpus(content)
         else:
             raise ValueError(f"Unknown corpus type: {corpus_type}")
     
@@ -68,7 +76,7 @@ class CorpusProcessor:
         Returns:
             Cleaned text content
         """
-        # Clean up the content
+        ## Clean up the content
         content = re.sub(r"\r", r"", content)
         content = re.sub(r"\((\d\d\d\d)\)", r"\1", content)
         content = re.sub(r"\((\d\d\d\d\_.)\)", r"\1", content)
@@ -81,9 +89,9 @@ class CorpusProcessor:
         return content
     
     @staticmethod
-    def _parse_narrative_corpus(content: str) -> Dict[str, str]:
+    def _parse_basch_narrative_corpus(content: str) -> Dict[str, str]:
         """
-        Parse a narrative corpus from cleaned text content.
+        Parse a basch_narrative corpus from cleaned text content.
         
         Args:
             content: Cleaned text content
@@ -91,24 +99,24 @@ class CorpusProcessor:
         Returns:
             Dictionary mapping student IDs to text content
         """
-        # Prepare first student id for split action
+        ## Prepare first student id for split action
         content = re.sub(r"6001\n", r"\n6001\n", content)
         
-        # Split corpus texts (results in first being the empty string)
+        ## Split corpus texts (results in first being the empty string)
         parts = re.split(r'\n(\d\d\d\d)\n', content)
         
-        # Structured object of texts
+        ## Structured object of texts
         corpus = {}
         for key, value in zip(parts[1::2], parts[2::2]):
             corpus[key] = value
         
-        logger.info(f"Loaded {len(corpus)} texts from narrative corpus")
+        logger.info(f"Loaded {len(corpus)} texts from basch_narrative corpus")
         return corpus
     
     @staticmethod
-    def _parse_instructive_corpus(content: str) -> Dict[str, str]:
+    def _parse_basch_instructive_corpus(content: str) -> Dict[str, str]:
         """
-        Parse an instructive corpus from cleaned text content.
+        Parse an basch_instructive corpus from cleaned text content.
         
         Args:
             content: Cleaned text content
@@ -116,10 +124,10 @@ class CorpusProcessor:
         Returns:
             Dictionary mapping student IDs to text content
         """
-        # Split corpus texts
+        ## Split corpus texts
         parts = re.split("[\n]###NEWTEXT###\n", content)
         
-        # Structured object of texts
+        ## Structured object of texts
         corpus = {}
         for t in parts:
             if not t.strip():
@@ -128,7 +136,7 @@ class CorpusProcessor:
             value = t.partition('\n')[2:][0]
             corpus[key] = value.rstrip()
         
-        logger.info(f"Loaded {len(corpus)} texts from instructive corpus")
+        logger.info(f"Loaded {len(corpus)} texts from basch_instructive corpus")
         return corpus
     
     @staticmethod
@@ -145,10 +153,10 @@ class CorpusProcessor:
         with open(output_path, "w", encoding="utf-8") as f:
             csv_writer = csv.writer(f, quoting=csv.QUOTE_NONNUMERIC)
             
-            # Write header row
+            ## Write header row
             csv_writer.writerow(["student_id", "text"])
             
-            # Write data rows
+            ## Write data rows
             for student_id, text in corpus.items():
                 csv_writer.writerow([student_id, text])
                 
@@ -171,12 +179,12 @@ class CorpusProcessor:
         with open(file_path, "r", encoding="utf-8") as f:
             csv_reader = csv.reader(f)
             
-            # Check for header row
+            ## Check for header row
             has_header = csv.Sniffer().has_header(f.read(1024))
             f.seek(0)
             
             if has_header:
-                # Skip header row
+                ## Skip header row
                 next(csv_reader)
             
             for row in csv_reader:
