@@ -15,10 +15,9 @@ from datetime import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
 ## Import modules
-from config import ConfigManager
+from config import ConfigManager, Config, ConfigSchema, CONFIG_VERSION
 from corpora import CorpusProcessor
 from benchmark_rating import BenchmarkRunner
-from ai import TextRater
 
 ## Configure logging
 logging.basicConfig(
@@ -46,7 +45,23 @@ def add_config_subparsers(subparsers):
     ## Show current config
     show_parser = config_subparsers.add_parser('show', help='Show current configuration')
     show_parser.add_argument('--config', '-c', help='Path to configuration file')
+    show_parser.add_argument('--mask-keys', '-m', action='store_true', 
+                            help='Mask API keys in the output')
     show_parser.set_defaults(func=show_config)
+
+    ## Dump config
+    dump_parser = config_subparsers.add_parser('dump', help='Dump the current effective configuration to a file')
+    dump_parser.add_argument('--output', '-o', required=True, help='Output file path for configuration dump')
+    dump_parser.add_argument('--config', '-c', help='Path to configuration file to use as base')
+    dump_parser.add_argument('--format', '-f', choices=['yaml', 'json', 'ini'], default='yaml',
+                           help='Output format (yaml, json, or ini)')
+    dump_parser.set_defaults(func=dump_config)
+
+    ## Validate config
+    validate_parser = config_subparsers.add_parser('validate', help='Validate a configuration file')
+    validate_parser.add_argument('--config', '-c', required=True, help='Path to configuration file to validate')
+    validate_parser.add_argument('--command', help='Validate for a specific command (e.g., benchmark:run)')
+    validate_parser.set_defaults(func=validate_config)
 
 
 def add_corpus_subparsers(subparsers):
@@ -59,6 +74,7 @@ def add_corpus_subparsers(subparsers):
     convert_parser.add_argument('--input', '-i', help='Input corpus file path')
     convert_parser.add_argument('--output', '-o', help='Output file path for converted corpus')
     convert_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], help='Type of corpus')
+    convert_parser.add_argument('--config', '-c', help='Path to configuration file')
     convert_parser.set_defaults(func=convert_corpus)
     
     ## List corpus
@@ -67,9 +83,9 @@ def add_corpus_subparsers(subparsers):
     list_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], 
                             help='Type of corpus (not needed for CSV files)')
     list_parser.add_argument('--limit', '-l', type=int, default=5, help='Limit the number of texts to display')
+    list_parser.add_argument('--config', '-c', help='Path to configuration file')
     list_parser.set_defaults(func=list_corpus)
-
-
+    
 def add_benchmark_subparsers(subparsers):
     """Add benchmark-related subcommands."""
     benchmark_parser = subparsers.add_parser('benchmark', help='Benchmark commands')
@@ -86,7 +102,7 @@ def add_benchmark_subparsers(subparsers):
     run_parser.add_argument('--runs', '-r', type=int, default=1, help='Number of benchmark runs')
     run_parser.add_argument('--limit', '-l', type=int, help='Limit the number of texts to score')
     run_parser.add_argument('--config', '-c', help='Path to configuration file')
-    run_parser.add_argument('--temperature', type=float, default=0.7, help='Temperature for generation')
+    run_parser.add_argument('--temperature', type=float, help='Temperature for generation')
     run_parser.add_argument('--no-temperature', action='store_true', 
                            help="Don't include temperature in API calls (use model defaults)")
     run_parser.add_argument('--verbose', '-v', action='count', default=0, 
@@ -94,103 +110,206 @@ def add_benchmark_subparsers(subparsers):
     run_parser.set_defaults(func=run_benchmark)
 
 
-def init_config(args, rater):
+## ==================================================================
+## Config Commands
+
+def init_config(args):
     """Initialize a default configuration file."""
-    from config import ConfigManager
-    import yaml
-    
-    default_config = {
-        'api_openai': '',
-        'api_claude': '',
-        'api_mistral': '',
-        'url_openai': 'https://api.openai.com/v1/chat/completions',
-        'url_claude': 'https://api.anthropic.com/v1/messages',
-        'temperature': 0.7,
-        'model_openai': 'gpt-4o-2024-11-20',
-        'model_claude': 'claude-3-7-sonnet-20250219',
-        'model_mistral': 'mistral-large-2411',
-        'comment_openai': 'Run',
-        'comment_claude': 'Run',
-        'comment_mistral': 'Run',
-        'num_runs': 1,
-        'max_workers': 10,
-        'retry_max_attempts': 12,
-        'retry_initial_wait': 2
-    }
-    
     try:
-        with open(args.output, 'w') as f:
-            yaml.dump(default_config, f, default_flow_style=False)
-        logger.info(f"Configuration initialized at {args.output}")
+        ## Get default configuration
+        default_config = ConfigManager.get_default_config()
         
-        ## Print environment variable settings advice
-        print("\nTo set API keys as environment variables:")
-        print("export OPENAI_API_KEY=your_key_here")
-        print("export ANTHROPIC_API_KEY=your_key_here")
-        print("export MISTRAL_API_KEY=your_key_here")
+        ## Save the configuration to the specified file
+        success = ConfigManager.save_config(default_config, args.output)
+        
+        if success:
+            logger.info(f"Configuration initialized at {args.output}")
+            
+            ## Print environment variable settings advice
+            print("\nTo set API keys as environment variables:")
+            print("export OPENAI_API_KEY=your_key_here")
+            print("export ANTHROPIC_API_KEY=your_key_here")
+            print("export MISTRAL_API_KEY=your_key_here")
+            
+            ## Print next steps
+            print("\nNext steps:")
+            print(f"1. Edit {args.output} to configure your settings")
+            print("2. Run 'awescore config validate --config your_config.yaml' to validate your configuration")
+            print("3. Use your configuration with other commands via --config your_config.yaml")
+        else:
+            logger.error(f"Failed to initialize configuration at {args.output}")
         
     except Exception as e:
         logger.error(f"Error creating config file: {str(e)}")
+        print(f"\nError: {str(e)}")
 
 
-def show_config(args, rater):
+def show_config(args):
     """Show current configuration."""
     import yaml
-    from config import ConfigManager
-    
-    ## Create a dummy argparse namespace for config loading
-    class DummyArgs:
-        pass
-    
-    dummy_args = DummyArgs()
-    for key, value in vars(args).items():
-        setattr(dummy_args, key, value)
-    
-    config = ConfigManager.load_config(dummy_args)
-    
-    ## Mask API keys for "security"
-    for key in config:
-        if 'api_' in key and config[key]:
-            config[key] = config[key][:4] + '...' + config[key][-4:]
-    
-    print("\nCurrent configuration:")
-    print(yaml.dump(config, default_flow_style=False))
-    print("\nConfiguration is loaded from (in order of precedence):")
-    print("1. Command line arguments")
-    print("2. Environment variables")
-    print("3. Config file specified by --config")
-    print("4. Default config files")
-
-
-def convert_corpus(args, rater):
-    """Convert corpus between formats."""
-    from corpora import CorpusProcessor
     
     try:
-        if args.input.endswith('.csv'):
-            corpus = CorpusProcessor.load_corpus_from_csv(args.input)
+        ## Create Config object that combines all configuration sources
+        config_obj = Config(args, command="config:show")
+        
+        ## Get dictionary representation of the configuration
+        config = config_obj.to_dict()
+        
+        ## Mask API keys if requested
+        if getattr(args, 'mask_keys', False):
+            for key in config:
+                if 'api_' in key and config[key]:
+                    config[key] = config[key][:4] + '...' + config[key][-4:] if len(config[key]) > 8 else "****"
+        
+        ## Get the configuration source description
+        source_description = config_obj.get_source_description()
+        
+        ## Display configuration information
+        print("\nCurrent effective configuration:")
+        print(yaml.dump(config, default_flow_style=False))
+        
+        ## Show configuration sources
+        print("\n" + source_description)
+        
+        ## Show information about config file if available
+        if hasattr(config_obj, '_original_config') and '_config_file_path' in config_obj._original_config:
+            print(f"\nConfig file used: {config_obj._original_config['_config_file_path']}")
+        
+        ## Show configuration version
+        print(f"\nConfiguration schema version: {config_obj.config_version}")
+    
+    except Exception as e:
+        logger.error(f"Error showing configuration: {str(e)}")
+        print(f"\nError: {str(e)}")
+
+
+def dump_config(args):
+    """Dump the current effective configuration to a file."""
+    try:
+        ## Create Config object that combines all configuration sources
+        config_obj = Config(args, command="config:dump")
+        
+        ## Get dictionary representation of the configuration
+        config = config_obj.to_dict()
+        
+        ## Adjust output file name based on specified format
+        output_path = args.output
+        if args.format == 'yaml' and not output_path.endswith(('.yaml', '.yml')):
+            output_path += '.yaml'
+        elif args.format == 'json' and not output_path.endswith('.json'):
+            output_path += '.json'
+        elif args.format == 'ini' and not output_path.endswith('.ini'):
+            output_path += '.ini'
+        
+        ## Save configuration to file
+        success = ConfigManager.save_config(config, output_path)
+        
+        if success:
+            logger.info(f"Configuration dumped to {output_path}")
+            print(f"\nConfiguration successfully dumped to {output_path}")
+            
+            ## Show the configuration source description
+            print("\n" + config_obj.get_source_description())
+        else:
+            logger.error(f"Failed to dump configuration to {output_path}")
+            print(f"\nError: Failed to dump configuration to {output_path}")
+    
+    except Exception as e:
+        logger.error(f"Error dumping configuration: {str(e)}")
+        print(f"\nError: {str(e)}")
+
+
+def validate_config(args):
+    """Validate a configuration file."""
+    try:
+        ## Load the configuration from the specified file
+        file_config = ConfigManager._load_from_file(args.config)
+        
+        if not file_config:
+            print(f"\nError: Could not load configuration from {args.config}")
+            return
+        
+        ## Validate the configuration
+        command = args.command if args.command else None
+        is_valid, errors = ConfigSchema.validate(file_config, command)
+        
+        ## Display validation results
+        if is_valid:
+            print(f"\nConfiguration file {args.config} is valid")
+            if command:
+                print(f"Configuration is valid for command: {command}")
+            print(f"Configuration schema version: {file_config.get('config_version', 'Not specified')}")
+        else:
+            print(f"\nConfiguration file {args.config} has validation errors:")
+            for i, error in enumerate(errors):
+                print(f"{i+1}. {error}")
+            
+            print("\nPlease fix these errors and try again.")
+    
+    except Exception as e:
+        logger.error(f"Error validating configuration: {str(e)}")
+        print(f"\nError: {str(e)}")
+
+
+## ==================================================================
+## Corpus Commands
+
+def convert_corpus(args):
+    """Convert corpus between formats."""
+    try:
+        ## Load configuration
+        config = Config(args, command="corpus:convert")
+        
+        ## Use configuration values if CLI arguments are not provided
+        input_path = args.input or config.input_corpus_path
+        corpus_type = args.type or config.corpus_type
+        
+        if not input_path:
+            raise ValueError("Input corpus file path is required")
+            
+        if not os.path.exists(input_path):
+            raise ValueError(f"Input corpus file does not exist: {input_path}")
+            
+        if input_path.endswith('.csv'):
+            corpus = CorpusProcessor.load_corpus_from_csv(input_path)
             output_path = args.output or "corpus_converted.txt"
             ## No direct conversion method to text currently, just save as CSV
             CorpusProcessor.save_corpus_to_csv(corpus, output_path + ".csv")
         else:
-            corpus = CorpusProcessor.load_corpus_from_txt(args.input, args.type)
+            if not corpus_type:
+                raise ValueError("Corpus type is required for text files")
+                
+            corpus = CorpusProcessor.load_corpus_from_txt(input_path, corpus_type)
             output_path = args.output or "corpus_converted.csv"
             CorpusProcessor.save_corpus_to_csv(corpus, output_path)
         
         logger.info(f"Conversion completed. Output saved to {output_path}")
-        
+        print(f"\nCorpus conversion completed. Output saved to {output_path}")
+    
     except Exception as e:
         logger.error(f"Error converting corpus: {str(e)}")
+        print(f"\nError: {str(e)}")
 
 
-def list_corpus(args, rater):
+def list_corpus(args):
     """List texts in corpus."""
-    from corpora import CorpusProcessor
-    
     try:
-        corpus = CorpusProcessor.load_corpus(args.input, args.type)
+        ## Load configuration
+        config = Config(args, command="corpus:list")
         
-        print(f"\nLoaded {len(corpus)} texts from corpus '{args.input}'")
+        ## Use configuration values if CLI arguments are not provided
+        input_path = args.input or config.input_corpus_path
+        corpus_type = args.type or config.corpus_type
+        
+        if not input_path:
+            raise ValueError("Input corpus file path is required")
+        
+        if not os.path.exists(input_path):
+            raise ValueError(f"Input corpus file does not exist: {input_path}")
+        
+        corpus = CorpusProcessor.load_corpus(input_path, corpus_type)
+        
+        print(f"\nLoaded {len(corpus)} texts from corpus '{input_path}'")
         print(f"Showing first {min(args.limit, len(corpus))} texts:\n")
         
         for i, (student_id, text) in enumerate(list(corpus.items())[:args.limit]):
@@ -198,16 +317,17 @@ def list_corpus(args, rater):
             preview = preview.replace('\n', ' ')
             print(f"{i+1}. Student ID: {student_id}")
             print(f"   Text: {preview}\n")
-            
+    
     except Exception as e:
         logger.error(f"Error listing corpus: {str(e)}")
+        print(f"\nError: {str(e)}")
 
 
-def run_benchmark(args, rater):
+## ==================================================================
+## Benchmark Commands
+        
+def run_benchmark(args):
     """Run benchmarks on corpus."""
-    from config import Config
-    from benchmark_rating import BenchmarkRunner
-    
     try:
         ## Track use_temperature based on --no-temperature flag
         if hasattr(args, 'no_temperature') and args.no_temperature:
@@ -221,50 +341,83 @@ def run_benchmark(args, rater):
         elif args.verbose >= 2:
             logger.setLevel(logging.DEBUG)
         
-        ## Create configuration
-        config = Config(args)
+        ## Create configuration with command context for validation
+        config = Config(args, command="benchmark:run")
+        
+        ## Display effective configuration if in verbose mode
+        if args.verbose >= 1:
+            import yaml
+            logger.info("Effective configuration:")
+            logger.info(yaml.dump(config.to_dict(), default_flow_style=False))
         
         ## Run benchmarks
         runner = BenchmarkRunner(config)
         runner.run()
         
         logger.info("Benchmark run completed successfully")
-        
+        print("\nBenchmark run completed successfully.")
+    
     except Exception as e:
         logger.error(f"Error running benchmark: {str(e)}")
         if args.verbose >= 1:
             import traceback
             logger.error(traceback.format_exc())
+        print(f"\nError: {str(e)}")
 
 
-def load_config():
-    """Load configuration from environment or config file."""
-    ## This is a stub function that will be replaced by ConfigManager
-    return {}
-
-
+## ==================================================================
+## MAIN Commands
+        
 def main():
     """Main entry point for the CLI tool."""
-    parser = argparse.ArgumentParser(
-        description="Command line tool for automated writing evaluation (AWE) using different AI models."
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Commands")
+    try:
+        parser = argparse.ArgumentParser(
+            description=f"AWEsomeScoring (v{CONFIG_VERSION}) - Command line tool for automated writing evaluation (AWE) using different AI models."
+        )
+        subparsers = parser.add_subparsers(dest="command", help="Commands")
 
-    ## Add commands from modules
-    add_config_subparsers(subparsers)
-    add_corpus_subparsers(subparsers)
-    add_benchmark_subparsers(subparsers)
+        ## Add commands from modules
+        add_config_subparsers(subparsers)
+        add_corpus_subparsers(subparsers)
+        add_benchmark_subparsers(subparsers)
 
-    args = parser.parse_args()
+        ## Parser common arguments that apply to multiple commands
+        parser.add_argument('--config', '-c', help='Path to configuration file')
+        parser.add_argument('--version', '-v', action='store_true', help='Show version information')
 
-    ## Load Rater class
-    rater = TextRater()
+        args = parser.parse_args()
+        
+        ## Handle version display
+        if args.version:
+            print(f"AWEsomeScoring version {CONFIG_VERSION}")
+            print("A command line tool for automated writing evaluation (AWE) using different AI models.")
+            print("MIT License - Copyright (c) 2025 Fabian Grünig")
+            return
+        
+        ## Parse the command context for configuration validation
+        command_context = None
+        if args.command:
+            if hasattr(args, 'config_cmd') and args.config_cmd:
+                command_context = f"{args.command}:{args.config_cmd}"
+            elif hasattr(args, 'corpus_cmd') and args.corpus_cmd:
+                command_context = f"{args.command}:{args.corpus_cmd}"
+            elif hasattr(args, 'benchmark_cmd') and args.benchmark_cmd:
+                command_context = f"{args.command}:{args.benchmark_cmd}"
+            else:
+                command_context = args.command
+        
+        ## Run command if given
+        if hasattr(args, 'func'):
+            args.func(args)
+        else:
+            parser.print_help()
     
-    ## Run command, if given
-    if hasattr(args, 'func'):
-        args.func(args, rater)
-    else:
-        parser.print_help()
+    except Exception as e:
+        logger.error(f"Unhandled exception in main: {str(e)}")
+        print(f"\nError: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 
 if __name__ == "__main__":
