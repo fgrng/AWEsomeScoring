@@ -214,8 +214,12 @@ class BenchmarkRunner:
                     result["student_id"] = student_id
 
                 ## Ensure each value is a string
-                for key in result:
-                    result[key] = str(json.dumps(result[key]))
+                for key, value in result.items():
+                    ## Store nested structures as JSON strings
+                    if isinstance(value, (dict, list)):
+                        result[key] = json.dumps(value, ensure_ascii=False)
+                    else:
+                        result[key] = str(value)
                     
                 results.append(result)
                 

@@ -314,7 +314,9 @@ class Config:
             raise ValueError(f"Number of runs must be at least 1, got {self.num_runs}")
 
         if self.limit < 0:
-            raise ValueError(f"Limit of students text must be at least 1 or 0 for no limit, got {self.num_runs}")
+            raise ValueError(
+                f"Limit of students text must be at least 1 or 0 for no limit, got {self.limit}"
+            )
             
         if self.max_workers < 1:
             raise ValueError(f"Maximum workers must be at least 1, got {self.max_workers}")
