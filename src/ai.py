@@ -94,6 +94,10 @@ class OpenAIRater:
                 {"role": "user", "content": specific_user_prompt}
             ]
         }
+
+        ## Add temperature if provided
+        if temperature is not None:
+            request_params["temperature"] = temperature
         
         try:
             response = self.client.chat.completions.create(**request_params)
