@@ -48,8 +48,6 @@ class ConfigSchema:
         "api_claude": {"type": str, "required": False, "default": ""},
         "api_mistral": {"type": str, "required": False, "default": ""},
         "org_openai": {"type": str, "required": False, "default": ""},
-        "url_openai": {"type": str, "required": False, "default": "https://api.openai.com/v1/chat/completions"},
-        "url_claude": {"type": str, "required": False, "default": "https://api.anthropic.com/v1/messages"},
         
         # Generation settings
         "temperature": {"type": float, "required": False, "default": 0.7, "min": 0.0, "max": 2.0},
@@ -60,10 +58,6 @@ class ConfigSchema:
         "model_claude": {"type": str, "required": False, "default": "claude-3-7-sonnet-20250219"},
         "model_mistral": {"type": str, "required": False, "default": "mistral-large-2411"},
         
-        # Run comments (used in filenames)
-        "comment_openai": {"type": str, "required": False, "default": "Run"},
-        "comment_claude": {"type": str, "required": False, "default": "Run"},
-        "comment_mistral": {"type": str, "required": False, "default": "Run"},
         
         # Service toggles
         "use_openai": {"type": bool, "required": False, "default": False},
@@ -218,9 +212,6 @@ class ConfigManager:
         'openai_model': 'model_openai',
         'claude_model': 'model_claude',
         'mistral_model': 'model_mistral',
-        'openai_comment': 'comment_openai',
-        'claude_comment': 'comment_claude',
-        'mistral_comment': 'comment_mistral',
     }
     
     @classmethod
@@ -498,10 +489,6 @@ class Config:
         self.api_claude = config.get('api_claude', '')
         self.api_mistral = config.get('api_mistral', '')
         
-        # API URLs
-        self.url_openai = config.get('url_openai', 'https://api.openai.com/v1/chat/completions')
-        self.url_claude = config.get('url_claude', 'https://api.anthropic.com/v1/messages')
-        
         # Organization IDs
         self.org_openai = config.get('org_openai', '')
         
@@ -513,11 +500,6 @@ class Config:
         self.model_openai = config.get('model_openai', 'gpt-4o-2024-11-20')
         self.model_claude = config.get('model_claude', 'claude-3-7-sonnet-20250219')
         self.model_mistral = config.get('model_mistral', 'mistral-large-2411')
-        
-        # Comments for file naming
-        self.comment_openai = config.get('comment_openai', 'Run')
-        self.comment_claude = config.get('comment_claude', 'Run')
-        self.comment_mistral = config.get('comment_mistral', 'Run')
         
         # Input/output settings - use standardized names
         self.input_corpus_path = config.get('input_corpus_path', '')

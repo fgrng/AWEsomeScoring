@@ -186,14 +186,13 @@ class BenchmarkRunner:
         
         ## Get configuration for this service
         model = getattr(self.config, f"model_{service}")
-        comment = getattr(self.config, f"comment_{service}")
         temperature = self.config.temperature if self.config.use_temperature else None
-        
+
         ## Define output file path
         temp_str = f"temp{self.config.temperature}" if self.config.use_temperature else "noTemp"
         output_file = os.path.join(
-            output_dir, 
-            f"data_{service}_{model}_{temp_str}_{comment}_run{run_num}.csv"
+            output_dir,
+            f"data_{service}_{model}_{temp_str}_run{run_num}.csv"
         )
         
         ## Process function for individual texts
@@ -215,7 +214,7 @@ class BenchmarkRunner:
             ## Save raw response
             raw_output_file = os.path.join(
                 output_dir,
-                f"raw_{service}_{model}_{temp_str}_{comment}_run{run_num}_{student_id}.json"
+                f"raw_{service}_{model}_{temp_str}_run{run_num}_{student_id}.json"
             )
             ResultsManager.save_raw_response(result, raw_output_file)
 
@@ -300,14 +299,13 @@ class BenchmarkRunner:
 
         ## Get configuration for this service
         model = getattr(self.config, f"model_{service}")
-        comment = getattr(self.config, f"comment_{service}")
         temperature = self.config.temperature if self.config.use_temperature else None
 
         ## Define output file path
         temp_str = f"temp{self.config.temperature}" if self.config.use_temperature else "noTemp"
         output_file = os.path.join(
-            output_dir, 
-            f"data_{service}_{model}_{temp_str}_{comment}_batch_run{run_num}.csv"
+            output_dir,
+            f"data_{service}_{model}_{temp_str}_batch_run{run_num}.csv"
         )
 
         ## Create batch directory
@@ -352,7 +350,7 @@ class BenchmarkRunner:
                     # Save raw response
                     raw_output_file = os.path.join(
                         output_dir,
-                        f"raw_{service}_{model}_{temp_str}_{comment}_batch_run{run_num}_{student_id}.json"
+                        f"raw_{service}_{model}_{temp_str}_batch_run{run_num}_{student_id}.json"
                     )
                     ResultsManager.save_raw_response(response_text, raw_output_file)
 
