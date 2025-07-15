@@ -552,6 +552,20 @@ class Config:
         self.use_batch_mode = config.get('use_batch_mode', False)
         self.batch_size = config.get('batch_size', 50)
         self.batch_poll_interval = config.get('batch_poll_interval', 60)
+
+        if self.limit < 0:
+            raise ValueError(
+                f"Limit of students text must be at least 1 or 0 for no limit, got {self.limit}"
+            )
+            
+        if self.max_workers < 1:
+            raise ValueError(f"Maximum workers must be at least 1, got {self.max_workers}")
+            
+        if self.retry_max_attempts < 1:
+            raise ValueError(f"Maximum retry attempts must be at least 1, got {self.retry_max_attempts}")
+            
+        if self.retry_initial_wait < 0.1:
+            raise ValueError(f"Initial retry wait time must be at least 0.1 seconds, got {self.retry_initial_wait}")
         
         # Version information
         self.config_version = config.get('config_version', CONFIG_VERSION)
