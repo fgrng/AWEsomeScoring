@@ -30,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("awesome_scoring")
 
-
 def add_config_subparsers(subparsers):
     """Add configuration-related subcommands."""
     config_parser = subparsers.add_parser('config', help='Configuration commands')
@@ -96,15 +95,22 @@ def add_benchmark_subparsers(subparsers):
     run_parser.add_argument('--input', '-i', help='Input corpus file path')
     run_parser.add_argument('--output', '-o', help='Output directory for results')
     run_parser.add_argument('--type', '-t', choices=['basch_narrative', 'basch_instructive'], help='Type of corpus')
+    ## Base config
     run_parser.add_argument('--system-prompt', '-s', help='System prompt file path')
     run_parser.add_argument('--user-prompt', '-u', help='User prompt file path')
     run_parser.add_argument('--services', nargs="+", choices=["openai", "claude", "mistral"], default=[], help='AI services to use')
-    run_parser.add_argument('--runs', '-r', type=int, default=1, help='Number of benchmark runs')
-    run_parser.add_argument('--limit', '-l', type=int, help='Limit the number of texts to score')
     run_parser.add_argument('--config', '-c', help='Path to configuration file')
+    ## Config details
+    run_parser.add_argument('--runs', '-r', type=int, help='Number of benchmark runs')
+    run_parser.add_argument('--limit', '-l', type=int, help='Limit the number of texts to score')
     run_parser.add_argument('--temperature', type=float, help='Temperature for generation')
     run_parser.add_argument('--no-temperature', action='store_true', 
                            help="Don't include temperature in API calls (use model defaults)")
+    ## Batch processing commands
+    run_parser.add_argument('--batch', action='store_true', help='Use batch API mode')
+    run_parser.add_argument('--batch-size', type=int, help='Batch size for batch API calls')
+    run_parser.add_argument('--batch-poll-interval', type=int, help='Polling interval in seconds for batch API status checks')
+    ## Other
     run_parser.add_argument('--verbose', '-v', action='count', default=0, 
                            help='Increase verbosity (can be used multiple times)')
     run_parser.set_defaults(func=run_benchmark)
@@ -317,6 +323,7 @@ def list_corpus(args):
             preview = preview.replace('\n', ' ')
             print(f"{i+1}. Student ID: {student_id}")
             print(f"   Text: {preview}\n")
+
     
     except Exception as e:
         logger.error(f"Error listing corpus: {str(e)}")
@@ -330,10 +337,16 @@ def run_benchmark(args):
     """Run benchmarks on corpus."""
     try:
         ## Track use_temperature based on --no-temperature flag
-        if hasattr(args, 'no_temperature') and args.no_temperature:
-            args.use_temperature = False
-        else:
-            args.use_temperature = True
+        # if hasattr(args, 'no_temperature') and args.no_temperature:
+        #     args.use_temperature = False
+        # else:
+        #     args.use_temperature = True
+
+        ## Track use_batch_mode based on command line flag
+        # if hasattr(args, 'use_batch_mode') and args.batch:
+        #     args.use_batch_mode = True
+        # else:
+        #     args.use_batch_mode = False
         
         ## Set logging level based on verbosity
         if args.verbose == 1:

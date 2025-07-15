@@ -6,6 +6,8 @@ the process of evaluating text corpora using different AI models.
 """
 
 import os
+from pathlib import Path
+
 import json
 import time
 import logging
@@ -125,9 +127,46 @@ class BenchmarkRunner:
             )
             os.makedirs(run_dir, exist_ok=True)
             
-            ## Run benchmarks for each enabled service (in parallel)
-            for service, rater in self.raters.items():
-                self.run_benchmark(service, rater, run_dir, run_num)
+            ## Run benchmarks for each enabled service (batch o parallel)
+            # for service, rater in self.raters.items():
+            #     # Check if batch mode is enabled
+            #     if self.config.use_batch_mode:
+            #         logger.info("Starting RUN in batch mode.")
+            #         self.run_benchmark_batch(service, rater, run_dir, run_num)
+            #     else:
+            #         logger.info("Starting RUN in parallel mode.")
+            #         self.run_benchmark(service, rater, run_dir, run_num)
+
+
+            ## Run benchmarks for all enabled services in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(self.raters)) as executor:
+                # Check if batch mode is enabled
+                if self.config.use_batch_mode:
+                    logger.info("Starting RUN in batch mode.")
+                    # Submit all service benchmark tasks
+                    futures = {
+                        executor.submit(self.run_benchmark_batch, service, rater, run_dir, run_num): service
+                        for service, rater in self.raters.items()
+                    }
+                else:
+                    logger.info("Starting RUN in parallel mode.")
+                    # Submit all service benchmark tasks
+                    futures = {
+                        executor.submit(self.run_benchmark, service, rater, run_dir, run_num): service
+                        for service, rater in self.raters.items()
+                    }
+                
+                # Wait for all to complete and handle any exceptions
+                for future in concurrent.futures.as_completed(futures):
+                    service = futures[future]
+                    try:
+                        future.result()
+                        logger.info(f"Completed {service} benchmark for run {run_num}")
+                    except Exception as e:
+                        logger.error(f"Error executing {service} benchmark: {str(e)}")
+                        if self.config.verbose >= 1:
+                            import traceback
+                            logger.error(traceback.format_exc())
         
         ## Calculate total elapsed time
         elapsed_time = time.time() - start_time
@@ -160,37 +199,41 @@ class BenchmarkRunner:
         ## Process function for individual texts
         def process_text(student_id: str, text: str) -> Tuple[str, Dict[str, Any]]:
             """Process a single text with the rater."""
-            try:
-                logger.info(f"Processing student {student_id} with {service}")
+
+            # try:
+            logger.info(f"Processing student {student_id} with {service}")
+
+            ## Rate the text
+            result = rater.rate_text(
+                text=text,
+                system_prompt=self.system_prompt,
+                user_prompt=self.user_prompt,
+                model=model,
+                temperature=temperature
+            )
+
+            ## Save raw response
+            raw_output_file = os.path.join(
+                output_dir,
+                f"raw_{service}_{model}_{temp_str}_{comment}_run{run_num}_{student_id}.json"
+            )
+            ResultsManager.save_raw_response(result, raw_output_file)
+
+            logger.info(f"Completed processing for student {student_id} with {service}")
+
+            return student_id, json.loads(result)
                 
-                ## Rate the text
-                result = rater.rate_text(
-                    text=text,
-                    system_prompt=self.system_prompt,
-                    user_prompt=self.user_prompt,
-                    model=model,
-                    temperature=temperature
-                )
-                
-                ## Save raw response
-                raw_output_file = os.path.join(
-                    output_dir,
-                    f"raw_{service}_{model}_{temp_str}_{comment}_run{run_num}_{student_id}.json"
-                )
-                ResultsManager.save_raw_response(result, raw_output_file)
-                
-                logger.info(f"Completed processing for student {student_id} with {service}")
-                
-                return student_id, json.loads(result)
-                
-            except Exception as e:               
-                logger.error(f"Error processing student {student_id} with {service}: {str(e)}")
-                return student_id, {
-                    "punktzahl": -999,
-                    "staerken": f"Error: {str(e)}",
-                    "schwaechen": "Error processing with AI service",
-                    "begruendung": "Error processing with AI service"
-                }
+            # except Exception as e:               
+            #     logger.error(f"Error processing student {student_id} with {service}: {str(e)}")
+            #     return student_id, {
+            #         "punktzahl": -999,
+            #         "staerken": f"Error: {str(e)}",
+            #         "schwaechen": "Error processing with AI service",
+            #         "begruendung": "Error processing with AI service"
+            #     }
+
+        ## Check, if batch processing is available.
+        
         
         ## Process all texts in parallel
         results = []
@@ -237,3 +280,101 @@ class BenchmarkRunner:
         ResultsManager.save_results_to_csv(results, output_file)
         
         logger.info(f"{service.capitalize()} benchmark run {run_num} completed")
+
+
+    def run_benchmark_batch(self, service: str, rater: Any, output_dir: str, run_num: int) -> None:
+        """
+        Run benchmark using the specified AI service in batch mode.
+
+        Args:
+            service: Service name ('openai', 'claude', or 'mistral')
+            rater: Rater instance
+            output_dir: Directory to save results
+            run_num: Current run number
+        """
+        logger.info(f"Running {service.capitalize()} batch benchmark (Run {run_num})")
+
+        ## Get configuration for this service
+        model = getattr(self.config, f"model_{service}")
+        comment = getattr(self.config, f"comment_{service}")
+        temperature = self.config.temperature if self.config.use_temperature else None
+
+        ## Define output file path
+        temp_str = f"temp{self.config.temperature}" if self.config.use_temperature else "noTemp"
+        output_file = os.path.join(
+            output_dir, 
+            f"data_{service}_{model}_{temp_str}_{comment}_batch_run{run_num}.csv"
+        )
+
+        ## Create batch directory
+        batch_dir = os.path.join(output_dir, "batches")
+        os.makedirs(batch_dir, exist_ok=True)
+
+        start_time = time.time()
+
+        try:
+            # Submit the entire corpus as a batch
+            logger.info(f"Submitting batch of {len(self.corpus)} texts to {service}")
+
+            # Process batch
+            results_dict = rater.rate_text_batch(
+                texts=self.corpus,
+                system_prompt=self.system_prompt,
+                user_prompt=self.user_prompt,
+                model=model,
+                temperature=temperature,
+                batch_size=self.config.batch_size,
+                output_dir=batch_dir,
+                poll_interval=self.config.batch_poll_interval
+            )
+
+            # Convert results to list format expected by ResultsManager
+            results = []
+            for student_id, response_text in results_dict.items():
+                try:
+                    # Parse the JSON response
+                    result = json.loads(response_text)
+
+                    # Add student_id if not present
+                    if "student_id" not in result:
+                        result["student_id"] = student_id
+
+                    # Ensure each value is a string (this was in the original code)
+                    for key in result:
+                        result[key] = str(json.dumps(result[key]))
+
+                    results.append(result)
+
+                    # Save raw response
+                    raw_output_file = os.path.join(
+                        output_dir,
+                        f"raw_{service}_{model}_{temp_str}_{comment}_batch_run{run_num}_{student_id}.json"
+                    )
+                    ResultsManager.save_raw_response(response_text, raw_output_file)
+
+                except json.JSONDecodeError:
+                    logger.error(f"Error parsing JSON response for student {student_id}: {response_text[:100]}...")
+                    result = {
+                        "student_id": student_id,
+                        "punktzahl": json.dumps(-999),
+                        "staerken": json.dumps("Error parsing JSON response"),
+                        "schwaechen": json.dumps("Error parsing JSON response"),
+                        "begruendung": json.dumps("Error parsing JSON response")
+                    }
+                    results.append(result)
+
+            # Save results to CSV
+            ResultsManager.save_results_to_csv(results, output_file)
+
+            # Report completion
+            elapsed_time = time.time() - start_time
+            logger.info(
+                f"{service.capitalize()} batch benchmark run {run_num} completed in "
+                f"{format_time_elapsed(elapsed_time)} for {len(results)} texts"
+            )
+
+        except Exception as e:
+            logger.error(f"Error in batch processing with {service}: {str(e)}")
+            if self.config.verbose >= 1:
+                import traceback
+                logger.error(traceback.format_exc())

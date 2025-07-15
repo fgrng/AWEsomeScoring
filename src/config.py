@@ -86,6 +86,11 @@ class ConfigSchema:
         "max_workers": {"type": int, "required": False, "default": 10, "min": 1},
         "retry_max_attempts": {"type": int, "required": False, "default": 12, "min": 1},
         "retry_initial_wait": {"type": float, "required": False, "default": 2.0, "min": 0.1},
+
+        # AI Batch Settings
+        "use_batch_mode": {"type": bool, "required": False, "default": True},
+        "batch_size": {"type": int, "required": False, "default": 0, "min": 0},
+        "batch_poll_interval": {"type": float, "required": False, "default": 60.0, "min": 0.1},        
         
         # Version information
         "config_version": {"type": str, "required": False, "default": CONFIG_VERSION},
@@ -542,6 +547,11 @@ class Config:
         # Retry settings
         self.retry_max_attempts = config.get('retry_max_attempts', 12)
         self.retry_initial_wait = config.get('retry_initial_wait', 2)
+
+        # Batch processing settings
+        self.use_batch_mode = config.get('use_batch_mode', False)
+        self.batch_size = config.get('batch_size', 50)
+        self.batch_poll_interval = config.get('batch_poll_interval', 60)
         
         # Version information
         self.config_version = config.get('config_version', CONFIG_VERSION)

@@ -149,6 +149,9 @@ class CorpusProcessor:
             output_path: Path to save the CSV file
         """
         logger.info(f"Writing corpus to {output_path}")
+
+        ## Create directory
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         with open(output_path, "w", encoding="utf-8") as f:
             csv_writer = csv.writer(f, quoting=csv.QUOTE_NONNUMERIC)
